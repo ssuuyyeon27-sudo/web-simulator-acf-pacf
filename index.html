@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Interactive ARIMA simulator for exploring sample ACF and PACF patterns. English and Korean.">
+<title>ACF &amp; PACF Simulator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&family=Noto+Sans+KR:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: controls on the left, three chart panels (series, ACF, PACF) on the right; stacks to one column when narrow */
+:root {
+  --bg: #f5f7f8;
+  --panel: #ffffff;
+  --fg: #17232b;
+  --muted: #5d6c76;
+  --line: #d9e1e6;
+  --accent: #0f6e7a;
+  --accent-soft: #dcefF1;
+  --bar: #0f6e7a;
+  --bar-sig: #c2410c;
+  --theory: #17232b;
+  --band: rgba(194, 65, 12, 0.10);
+  --font-body: "Public Sans", "Noto Sans KR", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f171c; --panel: #16222a; --fg: #e3ebef; --muted: #93a4ae; --line: #2a3a44;
+    --accent: #4fb8c4; --accent-soft: #173a40; --bar: #4fb8c4; --bar-sig: #f08a4b;
+    --theory: #e3ebef; --band: rgba(240, 138, 75, 0.13); color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f171c; --panel: #16222a; --fg: #e3ebef; --muted: #93a4ae; --line: #2a3a44;
+  --accent: #4fb8c4; --accent-soft: #173a40; --bar: #4fb8c4; --bar-sig: #f08a4b;
+  --theory: #e3ebef; --band: rgba(240, 138, 75, 0.13); color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { margin: 0; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 15px; line-height: 1.5; }
+.wrap { max-width: 1180px; margin: 0 auto; padding-inline: 16px; padding-block: 24px 40px; }
+.head-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+.lang { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.lang button { font: inherit; font-size: 0.85rem; font-weight: 600; padding: 6px 12px; border: 0; background: var(--panel); color: var(--muted); cursor: pointer; }
+.lang button[aria-pressed="true"] { background: var(--accent); color: var(--panel); }
+.seg { display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg button { font: inherit; font-size: 0.85rem; font-weight: 600; padding: 7px 4px; border: 0; background: transparent; color: var(--muted); cursor: pointer; }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button[aria-pressed="true"] { background: var(--accent-soft); color: var(--fg); }
+.diff-note { margin: 0 0 12px; padding: 10px 12px; border-radius: 8px; background: var(--accent-soft); font-size: 0.9rem; }
+header h1 { font-size: 1.6rem; margin: 0 0 4px; letter-spacing: -0.01em; text-wrap: balance; }
+header p { margin: 0; color: var(--muted); max-width: 70ch; }
+.grid { display: grid; grid-template-columns: 320px 1fr; gap: 20px; margin-top: 20px; align-items: start; }
+@media (max-width: 860px) { .grid { grid-template-columns: 1fr; } }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; min-width: 0; }
+.label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); font-weight: 600; margin: 0 0 8px; }
+.presets { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.presets button {
+  font: inherit; text-align: left; padding: 9px 10px; border-radius: 8px; cursor: pointer;
+  background: transparent; color: var(--fg); border: 1px solid var(--line); display: flex; flex-direction: column; gap: 2px;
+}
+.presets button .m { font-family: var(--font-mono); font-size: 0.85rem; font-weight: 600; }
+.presets button .s { font-size: 0.76rem; color: var(--muted); font-family: var(--font-mono); }
+.presets button:hover { border-color: var(--accent); }
+.presets button[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.ctrl { display: flex; flex-direction: column; gap: 14px; margin-top: 18px; }
+.row { display: flex; flex-direction: column; gap: 4px; }
+.row .top { display: flex; justify-content: space-between; align-items: baseline; font-size: 0.88rem; }
+.row .val { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-weight: 600; }
+input[type=range] { width: 100%; accent-color: var(--accent); }
+.row.disabled { opacity: 0.45; }
+.btn {
+  font: inherit; font-weight: 600; padding: 10px 14px; border-radius: 8px; border: 0; cursor: pointer;
+  background: var(--accent); color: var(--panel);
+}
+.check { display: flex; gap: 8px; align-items: center; font-size: 0.88rem; }
+.check input { accent-color: var(--accent); }
+.model { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); }
+.eq { font-family: var(--font-mono); font-size: 0.92rem; margin: 0 0 8px; overflow-x: auto; white-space: nowrap; }
+.note { font-size: 0.88rem; color: var(--muted); margin: 0; }
+.charts { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.chart-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 6px; }
+.chart-head h2 { font-size: 1rem; margin: 0; }
+.chart-head .hint { font-size: 0.8rem; color: var(--muted); font-family: var(--font-mono); }
+canvas { display: block; width: 100%; }
+.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+@media (max-width: 640px) { .pair { grid-template-columns: 1fr; } }
+.legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 0.8rem; color: var(--muted); margin-top: 6px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.sw { width: 12px; height: 12px; border-radius: 2px; display: inline-block; }
+.sw.bar { background: var(--bar); }
+.sw.sig { background: var(--bar-sig); }
+.sw.band { background: var(--band); border: 1px dashed var(--bar-sig); }
+.sw.th { width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--theory); }
+.verdict { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+.verdict div { min-width: 0; }
+.verdict b { display: block; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin-bottom: 2px; }
+table { border-collapse: collapse; font-family: var(--font-mono); font-size: 0.8rem; font-variant-numeric: tabular-nums; width: 100%; }
+th, td { padding: 4px 8px; text-align: right; border-bottom: 1px solid var(--line); }
+th { color: var(--muted); font-weight: 600; }
+td.sig { color: var(--bar-sig); font-weight: 600; }
+.tbl { overflow-x: auto; max-height: 260px; overflow-y: auto; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="head-row">
+      <h1 data-i18n="title"></h1>
+      <div class="lang" role="group" aria-label="Language">
+        <button type="button" id="lang-en" data-lang="en">English</button>
+        <button type="button" id="lang-ko" data-lang="ko">한국어</button>
+      </div>
+    </div>
+    <p data-i18n="intro"></p>
+  </header>
+
+  <div class="grid">
+    <aside class="card">
+      <p class="label" data-i18n="presets"></p>
+      <div class="presets" id="presets"></div>
+
+      <div class="ctrl">
+        <div class="row" id="coefRow">
+          <div class="top"><label for="coef" id="coefLabel">φ₁</label><span class="val" id="coefVal">0.70</span></div>
+          <input type="range" id="coef" min="-0.95" max="0.95" step="0.05" value="0.7">
+        </div>
+        <div class="row">
+          <div class="top"><label for="n" data-i18n="n"></label><span class="val" id="nVal">200</span></div>
+          <input type="range" id="n" min="50" max="1000" step="10" value="200">
+        </div>
+        <div class="row">
+          <div class="top"><label for="lags" data-i18n="lags"></label><span class="val" id="lagVal">20</span></div>
+          <input type="range" id="lags" min="10" max="40" step="1" value="20">
+        </div>
+        <div class="row">
+          <div class="top"><span id="diffLabel" data-i18n="diff"></span><span class="val" id="diffVal">d = 0</span></div>
+          <div class="seg" id="diffSeg" role="group" aria-labelledby="diffLabel">
+            <button type="button" id="diff-0" data-d="0" data-i18n="d0"></button>
+            <button type="button" id="diff-1" data-d="1" data-i18n="d1"></button>
+            <button type="button" id="diff-2" data-d="2" data-i18n="d2"></button>
+          </div>
+        </div>
+        <label class="check"><input type="checkbox" id="showTheory" checked> <span data-i18n="showTheory"></span></label>
+        <button class="btn" id="regen" type="button" data-i18n="regen"></button>
+      </div>
+
+      <div class="model">
+        <p class="label" data-i18n="equation"></p>
+        <p class="eq" id="eq"></p>
+        <p class="note" id="desc"></p>
+      </div>
+    </aside>
+
+    <main class="charts">
+      <section class="card">
+        <div class="chart-head"><h2 data-i18n="series"></h2><span class="hint" id="seriesHint"></span></div>
+        <canvas id="cSeries" height="180"></canvas>
+      </section>
+
+      <div class="pair">
+        <section class="card">
+          <div class="chart-head"><h2>ACF</h2><span class="hint" id="acfHint"></span></div>
+          <canvas id="cAcf" height="240"></canvas>
+        </section>
+        <section class="card">
+          <div class="chart-head"><h2>PACF</h2><span class="hint" id="pacfHint"></span></div>
+          <canvas id="cPacf" height="240"></canvas>
+        </section>
+      </div>
+      <div class="legend">
+        <span><i class="sw bar"></i><span data-i18n="lgIn"></span></span>
+        <span><i class="sw sig"></i><span data-i18n="lgSig"></span></span>
+        <span><i class="sw band"></i><span data-i18n="lgBand"></span></span>
+        <span><i class="sw th"></i><span data-i18n="lgTh"></span></span>
+      </div>
+
+      <section class="card">
+        <p class="label" data-i18n="howto"></p>
+        <p class="diff-note" id="diffNote" hidden></p>
+        <div class="verdict">
+          <div><b data-i18n="acfPat"></b><span id="vAcf"></span></div>
+          <div><b data-i18n="pacfPat"></b><span id="vPacf"></span></div>
+          <div><b data-i18n="sampleRes"></b><span id="vSample"></span></div>
+        </div>
+      </section>
+
+      <section class="card">
+        <p class="label" data-i18n="perlag"></p>
+        <div class="tbl"><table id="tbl"></table></div>
+      </section>
+    </main>
+  </div>
+</div>
+
+<script>
+const PRESETS = [
+  { id: "wn",  name: "ARIMA(0,0,0)", sub: "wn", p: 0, d: 0, q: 0, coef: 0 },
+  { id: "rw",  name: "ARIMA(0,1,0)", sub: "rw", p: 0, d: 1, q: 0, coef: 0 },
+  { id: "arp", name: "ARIMA(1,0,0)", sub: "φ₁ > 0", p: 1, d: 0, q: 0, coef: 0.7 },
+  { id: "arn", name: "ARIMA(1,0,0)", sub: "φ₁ < 0", p: 1, d: 0, q: 0, coef: -0.7 },
+  { id: "map", name: "ARIMA(0,0,1)", sub: "θ₁ > 0", p: 0, d: 0, q: 1, coef: 0.7 },
+  { id: "man", name: "ARIMA(0,0,1)", sub: "θ₁ < 0", p: 0, d: 0, q: 1, coef: -0.7 },
+];
+
+const state = { preset: PRESETS[2], coef: 0.7, n: 200, lags: 20, seed: 12345, theory: true, lang: "en", diff: 0 };
+
+const I18N = {
+  en: {
+    title: "ACF & PACF Simulator",
+    intro: "Pick a model, generate random data, and look at the sample ACF and PACF patterns. Bars outside the ±1.96/√n band are treated as significant.",
+    presets: "Model presets", n: "Series length (n)", lags: "Number of lags", showTheory: "Show theoretical values",
+    regen: "Generate new data", equation: "Equation", series: "Time series", howto: "How to read it",
+    acfPat: "ACF pattern", pacfPat: "PACF pattern", sampleRes: "This sample", perlag: "Values by lag",
+    lgIn: "within limits", lgSig: "significant", lgBand: "±1.96/√n band", lgTh: "theoretical value",
+    wn: "white noise", rw: "random walk", limit: "limit", none: "none",
+    sigAcf: "Significant ACF lags", sigPacf: "Significant PACF lags", acfTh: "ACF theory", pacfTh: "PACF theory",
+    diff: "Differencing", d0: "None", d1: "1st (∇)", d2: "2nd (∇²)", afterDiff: "differenced",
+    noteUnder: "The series is still non-stationary: the ACF decays very slowly. Apply one more difference.",
+    noteRight: "Differencing made the series stationary. The ACF/PACF now show the ARMA part of the model.",
+    noteRwOk: "After 1st differencing the random walk becomes white noise: no significant lags remain.",
+    noteOver: "Over-differenced: this model did not need it. Watch for a strongly negative ACF at lag 1 (≈ −0.5 for white noise after one difference). The pattern guide below describes the undifferenced model.",
+  },
+  ko: {
+    title: "ACF · PACF 시뮬레이터",
+    intro: "모형을 고르고 무작위 데이터를 생성한 뒤 표본 ACF와 PACF의 패턴을 확인하세요. ±1.96/√n 구간을 벗어난 막대는 유의한 것으로 봅니다.",
+    presets: "모형 프리셋", n: "데이터 길이 (n)", lags: "시차 수", showTheory: "이론값 표시",
+    regen: "새 데이터 생성", equation: "모형식", series: "시계열", howto: "해석 방법",
+    acfPat: "ACF 패턴", pacfPat: "PACF 패턴", sampleRes: "이번 표본", perlag: "시차별 값",
+    lgIn: "구간 내", lgSig: "유의함", lgBand: "±1.96/√n 구간", lgTh: "이론값",
+    wn: "백색잡음", rw: "확률보행", limit: "한계", none: "없음",
+    sigAcf: "유의한 ACF 시차", sigPacf: "유의한 PACF 시차", acfTh: "ACF 이론", pacfTh: "PACF 이론",
+    diff: "차분", d0: "없음", d1: "1차 (∇)", d2: "2차 (∇²)", afterDiff: "차분 후",
+    noteUnder: "아직 비정상 시계열입니다. ACF가 매우 천천히 감소합니다. 한 번 더 차분하세요.",
+    noteRight: "차분으로 시계열이 정상화되었습니다. 이제 ACF/PACF는 모형의 ARMA 부분을 보여줍니다.",
+    noteRwOk: "1차 차분 후 확률보행은 백색잡음이 됩니다. 유의한 시차가 남지 않습니다.",
+    noteOver: "과대차분입니다. 이 모형에는 차분이 필요하지 않습니다. 시차 1의 ACF가 크게 음수인지 확인하세요 (백색잡음을 한 번 차분하면 ≈ −0.5). 아래 패턴 설명은 차분 전 모형 기준입니다.",
+  },
+};
+const tr_ = k => I18N[state.lang][k] ?? k;
+const $ = id => document.getElementById(id);
+
+// ---------- RNG ----------
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function gaussGen(seed) {
+  const r = mulberry32(seed);
+  return () => {
+    let u = 0; while (u === 0) u = r();
+    return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * r());
+  };
+}
+
+// ---------- Simulation ----------
+function simulate(p, n, coef, seed) {
+  const g = gaussGen(seed);
+  const burn = 200;
+  const e = Array.from({ length: n + burn }, g);
+  const x = new Array(n + burn).fill(0);
+  for (let t = 0; t < n + burn; t++) {
+    if (p.p === 1) x[t] = (t > 0 ? coef * x[t - 1] : 0) + e[t];
+    else if (p.q === 1) x[t] = e[t] + (t > 0 ? coef * e[t - 1] : 0);
+    else x[t] = e[t];
+  }
+  let y = x.slice(burn);
+  if (p.d === 1) { // integrate: y_t = y_{t-1} + e_t
+    const out = []; let s = 0;
+    for (const v of y) { s += v; out.push(s); }
+    y = out;
+  }
+  return y;
+}
+
+// ---------- ACF & PACF ----------
+function acf(x, K) {
+  const n = x.length, m = x.reduce((a, b) => a + b, 0) / n;
+  let c0 = 0; for (const v of x) c0 += (v - m) ** 2;
+  const r = [1];
+  for (let k = 1; k <= K; k++) {
+    let s = 0; for (let t = k; t < n; t++) s += (x[t] - m) * (x[t - k] - m);
+    r.push(s / c0);
+  }
+  return r;
+}
+// Durbin–Levinson: rho[0..K] -> phi_kk for k=1..K
+function pacfFromAcf(rho, K) {
+  const out = [null]; let phi = [];
+  for (let k = 1; k <= K; k++) {
+    let num = rho[k], den = 1;
+    for (let j = 1; j < k; j++) { num -= phi[j - 1] * rho[k - j]; den -= phi[j - 1] * rho[j]; }
+    const pkk = den === 0 ? 0 : num / den;
+    const next = [];
+    for (let j = 1; j < k; j++) next.push(phi[j - 1] - pkk * phi[k - j - 1]);
+    next.push(pkk); phi = next; out.push(pkk);
+  }
+  return out;
+}
+function difference(y, d) {
+  for (let i = 0; i < d; i++) y = y.slice(1).map((v, t) => v - y[t]);
+  return y;
+}
+// Theoretical ACF of the analysed series (after `diff` differences), or null if still non-stationary
+function theoryAcf(p, coef, K, diff) {
+  const extra = diff - p.d;
+  if (extra < 0) return null; // non-stationary: theoretical ACF is undefined
+  // autocovariance of the stationary ARMA part (σ² = 1), long enough for each extra difference
+  const M = K + 2 * extra, g = [];
+  for (let k = 0; k <= M; k++) {
+    if (p.p === 1) g.push(coef ** k / (1 - coef * coef));
+    else if (p.q === 1) g.push(k === 0 ? 1 + coef * coef : k === 1 ? coef : 0);
+    else g.push(k === 0 ? 1 : 0);
+  }
+  // each over-difference: γ'(k) = 2γ(k) − γ(k−1) − γ(k+1), with γ(−1) = γ(1)
+  let cur = g;
+  for (let i = 0; i < extra; i++) {
+    const at = k => cur[Math.abs(k)];
+    const next = [];
+    for (let k = 0; k < cur.length - 1; k++) next.push(2 * at(k) - at(k - 1) - at(k + 1));
+    cur = next;
+  }
+  return cur.slice(0, K + 1).map(v => v / cur[0]);
+}
+
+// ---------- Text ----------
+function texts(p, c) {
+  const cs = c.toFixed(2), sign = c >= 0 ? "+" : "−", ac = Math.abs(c).toFixed(2);
+  const ko = state.lang === "ko";
+  if (p.id === "wn") return ko ? {
+    eq: "Yₜ = εₜ",
+    desc: "시점 간 의존성이 없습니다. 각 값은 순수한 무작위입니다.",
+    acf: "시차 1 이상은 모두 0에 가깝습니다 (20개 시차 중 약 1개는 우연히 구간을 벗어날 수 있음).",
+    pacf: "ACF와 같습니다. 유의한 시차가 없습니다.",
+  } : {
+    eq: "Yₜ = εₜ",
+    desc: "No dependence over time. Every value is pure noise.",
+    acf: "All lags ≥ 1 are near zero (about 1 in 20 lags may fall outside the band by chance).",
+    pacf: "Same as the ACF: no significant lags.",
+  };
+  if (p.id === "rw") return ko ? {
+    eq: "Yₜ = Yₜ₋₁ + εₜ",
+    desc: "비정상 시계열입니다. 한 번 차분(d = 1)하면 백색잡음으로 돌아갑니다.",
+    acf: "1 근처에서 시작해 매우 천천히, 거의 선형으로 감소합니다. 차분이 필요하다는 신호입니다.",
+    pacf: "시차 1이 매우 크고(1에 가까움) 이후 시차는 거의 0입니다.",
+  } : {
+    eq: "Yₜ = Yₜ₋₁ + εₜ",
+    desc: "A non-stationary series. Difference it once (d = 1) and it turns back into white noise.",
+    acf: "Starts near 1 and decays very slowly, almost linearly. This signals that differencing is needed.",
+    pacf: "Lag 1 is very large (close to 1); later lags are near zero.",
+  };
+  if (p.p === 1) return ko ? {
+    eq: `Yₜ = ${cs}·Yₜ₋₁ + εₜ`,
+    desc: c >= 0
+      ? "φ₁이 양수인 AR(1): 현재 값이 직전 값과 같은 방향으로 움직이는 경향이 있어 시계열이 완만하게 출렁입니다."
+      : "φ₁이 음수인 AR(1): 현재 값이 직전 값과 반대 방향으로 움직이는 경향이 있어 시계열이 지그재그 형태를 보입니다.",
+    acf: c >= 0
+      ? `지수적으로 감소합니다(dies down): ρₖ = ${cs}ᵏ, 모두 양수.`
+      : `부호가 번갈아 바뀌며 지수적으로 감소합니다: ρₖ = (${cs})ᵏ.`,
+    pacf: `시차 1 이후 절단됩니다(cut off). φ₁₁ = ${cs}, 나머지 시차 ≈ 0.`,
+  } : {
+    eq: `Yₜ = ${cs}·Yₜ₋₁ + εₜ`,
+    desc: c >= 0
+      ? "AR(1) with positive φ₁: today's value tends to move in the same direction as yesterday's, so the series looks wavy."
+      : "AR(1) with negative φ₁: today's value tends to move opposite to yesterday's, so the series zig-zags.",
+    acf: c >= 0
+      ? `Decays exponentially (dies down): ρₖ = ${cs}ᵏ, all positive.`
+      : `Decays exponentially with alternating signs: ρₖ = (${cs})ᵏ.`,
+    pacf: `Cuts off after lag 1. φ₁₁ = ${cs}, other lags ≈ 0.`,
+  };
+  const r1 = (c / (1 + c * c)).toFixed(3);
+  return ko ? {
+    eq: `Yₜ = εₜ ${sign} ${ac}·εₜ₋₁`,
+    desc: (c >= 0 ? "θ₁이 양수인 MA(1)." : "θ₁이 음수인 MA(1).") +
+      " 여기서는 R/statsmodels의 부호 규약(Yₜ = εₜ + θ₁εₜ₋₁)을 따릅니다. Box-Jenkins 교재에서는 부호가 반대입니다.",
+    acf: `시차 1 이후 절단됩니다(cut off). ρ₁ = θ₁/(1+θ₁²) = ${r1}, 나머지 시차 = 0.`,
+    pacf: c >= 0
+      ? "양수에서 시작해 부호가 번갈아 바뀌며 지수적으로 감소합니다(dies down)."
+      : "모두 음수이며 지수적으로 감소합니다(dies down).",
+  } : {
+    eq: `Yₜ = εₜ ${sign} ${ac}·εₜ₋₁`,
+    desc: (c >= 0 ? "MA(1) with positive θ₁." : "MA(1) with negative θ₁.") +
+      " The sign convention follows R/statsmodels (Yₜ = εₜ + θ₁εₜ₋₁). Box-Jenkins textbooks flip the sign.",
+    acf: `Cuts off after lag 1. ρ₁ = θ₁/(1+θ₁²) = ${r1}, other lags = 0.`,
+    pacf: c >= 0
+      ? "Decays exponentially (dies down) with alternating signs, starting positive."
+      : "Decays exponentially (dies down), all negative.",
+  };
+}
+
+// ---------- Drawing ----------
+function css(v) { return getComputedStyle(document.documentElement).getPropertyValue(v).trim(); }
+function setupCanvas(cv) {
+  const dpr = window.devicePixelRatio || 1;
+  // remember the CSS height once; cv.height below is in device pixels and must not feed back in
+  if (!cv.dataset.h) cv.dataset.h = cv.getAttribute("height");
+  const w = cv.clientWidth, h = parseInt(cv.dataset.h, 10);
+  cv.style.height = h + "px";
+  cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
+  const ctx = cv.getContext("2d"); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return { ctx, w, h };
+}
+function niceTicks(lo, hi, count) {
+  const span = hi - lo || 1, raw = span / count, mag = 10 ** Math.floor(Math.log10(raw));
+  const step = [1, 2, 2.5, 5, 10].map(s => s * mag).find(s => s >= raw);
+  const out = []; for (let v = Math.ceil(lo / step) * step; v <= hi + 1e-9; v += step) out.push(+v.toFixed(10));
+  return out;
+}
+
+function drawSeries(y) {
+  const { ctx, w, h } = setupCanvas($("cSeries"));
+  const L = 44, R = 10, T = 10, B = 24;
+  let lo = Math.min(...y), hi = Math.max(...y); const pad = (hi - lo) * 0.08 || 1; lo -= pad; hi += pad;
+  const X = i => L + (i / (y.length - 1)) * (w - L - R);
+  const Y = v => T + (1 - (v - lo) / (hi - lo)) * (h - T - B);
+  ctx.font = `11px ${css("--font-mono")}`; ctx.fillStyle = css("--muted"); ctx.strokeStyle = css("--line"); ctx.lineWidth = 1;
+  ctx.textAlign = "right"; ctx.textBaseline = "middle";
+  for (const t of niceTicks(lo, hi, 4)) {
+    ctx.beginPath(); ctx.moveTo(L, Y(t)); ctx.lineTo(w - R, Y(t)); ctx.stroke();
+    ctx.fillText(+t.toFixed(2), L - 6, Y(t));
+  }
+  ctx.textAlign = "center"; ctx.textBaseline = "top";
+  for (const t of niceTicks(0, y.length - 1, 6)) ctx.fillText(t, X(t), h - B + 6);
+  ctx.strokeStyle = css("--accent"); ctx.lineWidth = 1.4; ctx.beginPath();
+  y.forEach((v, i) => i ? ctx.lineTo(X(i), Y(v)) : ctx.moveTo(X(i), Y(v)));
+  ctx.stroke();
+}
+
+function drawCorr(cv, vals, theory, n, startLag) {
+  const { ctx, w, h } = setupCanvas(cv);
+  const K = vals.length - 1, L = 40, R = 10, T = 10, B = 24;
+  const band = 1.96 / Math.sqrt(n);
+  const X = k => L + ((k - startLag + 0.5) / (K - startLag + 1)) * (w - L - R);
+  const Y = v => T + (1 - (v + 1) / 2) * (h - T - B);
+  ctx.font = `11px ${css("--font-mono")}`;
+  // band
+  ctx.fillStyle = css("--band"); ctx.fillRect(L, Y(band), w - L - R, Y(-band) - Y(band));
+  ctx.setLineDash([4, 3]); ctx.strokeStyle = css("--bar-sig"); ctx.lineWidth = 1;
+  for (const b of [band, -band]) { ctx.beginPath(); ctx.moveTo(L, Y(b)); ctx.lineTo(w - R, Y(b)); ctx.stroke(); }
+  ctx.setLineDash([]);
+  // grid y
+  ctx.fillStyle = css("--muted"); ctx.textAlign = "right"; ctx.textBaseline = "middle"; ctx.strokeStyle = css("--line");
+  for (const t of [-1, -0.5, 0, 0.5, 1]) {
+    if (t !== 0) { ctx.beginPath(); ctx.moveTo(L, Y(t)); ctx.lineTo(w - R, Y(t)); ctx.stroke(); }
+    ctx.fillText(t.toFixed(1), L - 6, Y(t));
+  }
+  ctx.strokeStyle = css("--muted"); ctx.beginPath(); ctx.moveTo(L, Y(0)); ctx.lineTo(w - R, Y(0)); ctx.stroke();
+  // bars
+  const bw = Math.max(2, Math.min(10, ((w - L - R) / (K - startLag + 1)) * 0.45));
+  ctx.textAlign = "center"; ctx.textBaseline = "top";
+  const tickEvery = K > 25 ? 5 : K > 12 ? 2 : 1;
+  for (let k = startLag; k <= K; k++) {
+    const v = vals[k], sig = k > 0 && Math.abs(v) > band;
+    ctx.fillStyle = sig ? css("--bar-sig") : css("--bar");
+    const y0 = Y(0), y1 = Y(v);
+    ctx.fillRect(X(k) - bw / 2, Math.min(y0, y1), bw, Math.abs(y1 - y0) || 1);
+    if (k % tickEvery === 0) { ctx.fillStyle = css("--muted"); ctx.fillText(k, X(k), h - B + 6); }
+  }
+  // theoretical
+  if (theory) {
+    ctx.strokeStyle = css("--theory"); ctx.lineWidth = 1.6;
+    for (let k = startLag; k <= K; k++) {
+      ctx.beginPath(); ctx.arc(X(k), Y(theory[k]), 3.5, 0, Math.PI * 2); ctx.stroke();
+    }
+  }
+}
+
+// ---------- Render ----------
+let cache = null;
+function compute() {
+  const p = state.preset;
+  const y = difference(simulate(p, state.n, state.coef, state.seed), state.diff);
+  const r = acf(y, state.lags);
+  const ph = pacfFromAcf(r, state.lags);
+  const tr = theoryAcf(p, state.coef, state.lags, state.diff);
+  const tp = tr ? pacfFromAcf(tr, state.lags) : null;
+  cache = { y, r, ph, tr, tp };
+}
+function render() {
+  const p = state.preset, { y, r, ph, tr, tp } = cache;
+  const n = y.length, band = 1.96 / Math.sqrt(n);
+  drawSeries(y);
+  drawCorr($("cAcf"), r, state.theory ? tr : null, n, 1);
+  drawCorr($("cPacf"), ph, state.theory ? tp : null, n, 1);
+
+  const op = ["", "∇Yₜ, ", "∇²Yₜ, "][state.diff];
+  $("seriesHint").textContent = `${op}n = ${n}, seed ${state.seed}`;
+  $("diffVal").textContent = `d = ${state.diff}`;
+  document.querySelectorAll("#diffSeg button").forEach(b => b.setAttribute("aria-pressed", +b.dataset.d === state.diff));
+  const extra = state.diff - p.d;
+  const noteKey = extra < 0 ? "noteUnder" : extra > 0 ? "noteOver" : state.diff === 0 ? null : p.id === "rw" ? "noteRwOk" : "noteRight";
+  $("diffNote").hidden = !noteKey;
+  if (noteKey) $("diffNote").textContent = tr_(noteKey);
+  $("acfHint").textContent = $("pacfHint").textContent = `${tr_("limit")} ±${band.toFixed(3)}`;
+
+  const t = texts(p, state.coef);
+  $("eq").textContent = t.eq; $("desc").textContent = t.desc;
+  $("vAcf").textContent = t.acf; $("vPacf").textContent = t.pacf;
+  const sa = [], sp = [];
+  for (let k = 1; k <= state.lags; k++) { if (Math.abs(r[k]) > band) sa.push(k); if (Math.abs(ph[k]) > band) sp.push(k); }
+  const fmt = a => a.length ? a.join(", ") : tr_("none");
+  $("vSample").textContent = `${tr_("sigAcf")}: ${fmt(sa)}. ${tr_("sigPacf")}: ${fmt(sp)}.`;
+
+  let html = `<thead><tr><th>Lag</th><th>ACF</th>${tr ? `<th>${tr_("acfTh")}</th>` : ""}<th>PACF</th>${tp ? `<th>${tr_("pacfTh")}</th>` : ""}</tr></thead><tbody>`;
+  for (let k = 1; k <= state.lags; k++) {
+    const ca = Math.abs(r[k]) > band ? ' class="sig"' : "", cp = Math.abs(ph[k]) > band ? ' class="sig"' : "";
+    html += `<tr><td>${k}</td><td${ca}>${r[k].toFixed(3)}</td>${tr ? `<td>${tr[k].toFixed(3)}</td>` : ""}<td${cp}>${ph[k].toFixed(3)}</td>${tp ? `<td>${tp[k].toFixed(3)}</td>` : ""}</tr>`;
+  }
+  $("tbl").innerHTML = html + "</tbody>";
+}
+function update() { compute(); render(); }
+
+// ---------- UI ----------
+function buildPresets() {
+  const box = $("presets");
+  PRESETS.forEach(p => {
+    const b = document.createElement("button");
+    b.type = "button"; b.id = "preset-" + p.id;
+    b.innerHTML = `<span class="m">${p.name}</span><span class="s" data-sub="${p.sub}"></span>`;
+    b.addEventListener("click", () => selectPreset(p));
+    box.appendChild(b);
+  });
+}
+function selectPreset(p) {
+  state.preset = p; state.coef = p.coef;
+  document.querySelectorAll(".presets button").forEach(b => b.setAttribute("aria-pressed", b.id === "preset-" + p.id));
+  const has = p.p === 1 || p.q === 1;
+  $("coefRow").classList.toggle("disabled", !has);
+  $("coef").disabled = !has;
+  $("coefLabel").textContent = p.q === 1 ? "θ₁" : "φ₁";
+  if (has) {
+    // lock the slider to the preset's sign
+    $("coef").min = p.coef > 0 ? "0.05" : "-0.95";
+    $("coef").max = p.coef > 0 ? "0.95" : "-0.05";
+    $("coef").value = p.coef;
+    $("coefVal").textContent = p.coef.toFixed(2);
+  } else $("coefVal").textContent = "–";
+  update();
+}
+
+$("coef").addEventListener("input", e => { state.coef = +e.target.value; $("coefVal").textContent = state.coef.toFixed(2); update(); });
+$("n").addEventListener("input", e => { state.n = +e.target.value; $("nVal").textContent = state.n; update(); });
+$("lags").addEventListener("input", e => { state.lags = +e.target.value; $("lagVal").textContent = state.lags; update(); });
+document.querySelectorAll("#diffSeg button").forEach(b => b.addEventListener("click", () => { state.diff = +b.dataset.d; update(); }));
+$("showTheory").addEventListener("change", e => { state.theory = e.target.checked; render(); });
+$("regen").addEventListener("click", () => { state.seed = Math.floor(Math.random() * 1e6); update(); });
+
+let rt; window.addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(render, 100); });
+window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", render);
+new MutationObserver(render).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+
+function applyLang() {
+  document.documentElement.lang = state.lang;
+  document.querySelectorAll("[data-i18n]").forEach(el => { el.textContent = tr_(el.dataset.i18n); });
+  document.querySelectorAll("[data-sub]").forEach(el => { el.textContent = tr_(el.dataset.sub); });
+  document.querySelectorAll(".lang button").forEach(b => b.setAttribute("aria-pressed", b.dataset.lang === state.lang));
+  document.title = tr_("title");
+}
+function setLang(l) {
+  state.lang = l;
+  try { localStorage.setItem("acf-lang", l); } catch (e) {}
+  applyLang(); render();
+}
+document.querySelectorAll(".lang button").forEach(b => b.addEventListener("click", () => setLang(b.dataset.lang)));
+try { const saved = localStorage.getItem("acf-lang"); if (saved in I18N) state.lang = saved; } catch (e) {}
+
+buildPresets();
+applyLang();
+selectPreset(PRESETS[2]);
+</script>
+</body>
+</html>
